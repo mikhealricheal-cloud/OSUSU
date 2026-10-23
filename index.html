@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Osusu - savings group tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#14283c;--muted:#5d6f80;--bg:#f2f6f3;--card:#fff;--line:#d8e2dc;--green:#17894f;--green-d:#0f6538;--gold:#f0b429;--red:#c0392b;--blue:#2a6fb0}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Bricolage Grotesque',system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+.cloth{height:14px;background:
+ linear-gradient(135deg,var(--gold) 25%,transparent 25%) -7px 0/14px 14px,
+ linear-gradient(225deg,var(--gold) 25%,transparent 25%) -7px 0/14px 14px,
+ linear-gradient(315deg,var(--gold) 25%,transparent 25%) 0 0/14px 14px,
+ linear-gradient(45deg,var(--gold) 25%,transparent 25%) 0 0/14px 14px,var(--green-d)}
+header{background:var(--ink);color:#fff;padding:18px 16px 16px}
+header h1{margin:0;font-size:1.7rem;font-weight:800;letter-spacing:-.02em}
+header p{margin:2px 0 0;color:#b9c7d4;font-size:.95rem}
+main{max-width:720px;margin:0 auto;padding:16px}
+h2{font-size:1.25rem;margin:0 0 10px;font-weight:800}
+h3{font-size:1rem;margin:0 0 6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+label{display:block;font-weight:600;font-size:.9rem;margin:10px 0 4px}
+input,select,textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+textarea{min-height:120px;resize:vertical}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:3px solid #9fd7b8;outline-offset:1px}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:130px}
+button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:10px 14px;background:var(--green);color:#fff;cursor:pointer}
+button:hover{background:var(--green-d)}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button.ghost:hover{background:#eaf1ec}
+button.danger{background:var(--red)}
+button.small{padding:6px 10px;font-size:.85rem}
+.hint{color:var(--muted);font-size:.85rem;margin:4px 0 0}
+.top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.tabs{display:flex;gap:6px;margin:12px 0}
+.tabs button{flex:1;background:#e3ece6;color:var(--ink)}
+.tabs button.on{background:var(--ink);color:#fff}
+.round{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.round .mid{text-align:center}
+.round .big{font-size:1.15rem;font-weight:800}
+.bar{height:10px;background:#e3ece6;border-radius:6px;overflow:hidden;margin:10px 0 4px}
+.bar>div{height:100%;background:var(--green)}
+.member{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;border-top:1px solid var(--line);flex-wrap:wrap}
+.member:first-of-type{border-top:0}
+.member .who{font-weight:600}
+.acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.acts input{width:150px;padding:7px}
+.chip{font-size:.8rem;font-weight:600;padding:3px 9px;border-radius:20px}
+.chip.unpaid{background:#fdeaea;color:var(--red)}
+.chip.pending{background:#fff3d1;color:#8a6200}
+.chip.ok{background:#dcf3e6;color:var(--green-d)}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{text-align:left;padding:8px 6px;border-top:1px solid var(--line)}
+th{border-top:0;color:var(--muted);font-weight:600}
+tr.now td{background:#fff6dc}
+.ev{padding:8px 0;border-top:1px solid var(--line);font-size:.92rem}
+.ev:first-child{border-top:0}
+.ev small{color:var(--muted)}
+.empty{color:var(--muted);text-align:center;padding:18px 6px}
+.group-item{display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer}
+.switch{display:flex;align-items:center;gap:6px;font-size:.9rem;font-weight:600}
+.switch input{width:auto}
+.chip.late{background:var(--red);color:#fff}
+.payto{background:#fff6dc;border-color:#ecd9a0}
+.admline{flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="cloth"></div>
+<header>
+  <h1>Osusu</h1>
+  <p>Track your savings group with a clear, open record.</p>
+</header>
+<main id="app"></main>
+<input type="file" id="restoreFile" accept=".json,application/json" style="display:none">
+
+<script>
+/* ---------- storage ---------- */
+const KEY = 'osusu.v1';
+let RO = false; // read-only snapshot mode
+let state = { groups: [], sel: null, tab: 'pay', admin: false, cycle: null, creating: false };
+try { const s = JSON.parse(localStorage.getItem(KEY)); if (s) state = Object.assign(state, s, { creating: false }); } catch (e) {}
+const save = () => { if (RO) return; try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+
+/* ---------- helpers ---------- */
+const $app = document.getElementById('app');
+const uid = () => Math.random().toString(36).slice(2, 9);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = n => 'NLe ' + Number(n).toLocaleString('en-US');
+const fmtDate = d => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtTime = ts => new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+function dueDate(g, i) {
+  const d = new Date(g.start + 'T00:00:00');
+  if (g.freq === 'weekly') d.setDate(d.getDate() + 7 * i);
+  else d.setMonth(d.getMonth() + i);
+  return d;
+}
+function currentCycle(g) {
+  const today = new Date(); let c = 0;
+  for (let i = 0; i < g.members.length; i++) if (dueDate(g, i) <= today) c = i;
+  return c;
+}
+const grp = () => state.groups.find(g => g.id === state.sel);
+const pay = (g, c, m) => g.payments[c + ':' + m];
+const activeMembers = (g, c) => g.members.filter(m => (m.joined || 0) <= c);
+const graceOf = g => g.grace ?? 2;
+function lateDays(g, c, m) {
+  if (pay(g, c, m.id)) return 0;
+  const d = Math.floor((Date.now() - dueDate(g, c)) / 864e5);
+  return d > graceOf(g) ? d : 0;
+}
+const confirmedCount = (g, c) => g.members.filter(m => (pay(g, c, m.id) || {}).status === 'confirmed').length;
+
+/* ---------- views ---------- */
+function viewHome() {
+  if (state.creating) return viewCreate();
+  const list = state.groups.length
+    ? state.groups.map(g => `
+      <div class="card group-item" data-act="open" data-id="${g.id}">
+        <div><h3>${esc(g.name)}</h3>
+        <span class="hint">${g.members.length} members &middot; ${money(g.amount)} ${g.freq}</span></div>
+        <button class="ghost small">Open</button>
+      </div>`).join('')
+    : `<div class="card empty">No groups yet. Create your first savings group.</div>`;
+  const lb = state.lastBackup ? 'Last backup: ' + fmtDate(state.lastBackup) : 'No backup yet. Make one now.';
+  return `<div class="top"><h2>Your groups</h2><button data-act="new">Create group</button></div>${list}
+  <div class="card"><h3>Backup and restore</h3>
+    <p class="hint">Your groups are saved only in this browser. Save a backup file after every round, and keep it somewhere safe (WhatsApp to yourself, Google Drive). The file contains phone numbers, so keep it private.</p>
+    <p class="hint"><b>${lb}</b></p>
+    <div class="row"><button data-act="backup">Back up all groups</button><button class="ghost" data-act="restore">Restore from file</button></div>
+  </div>`;
+}
+
+function viewCreate() {
+  const today = new Date().toISOString().slice(0, 10);
+  return `
+  <div class="top"><h2>New savings group</h2><button class="ghost" data-act="cancel">Cancel</button></div>
+  <form class="card" id="createForm">
+    <label>Group name</label>
+    <input name="name" required placeholder="e.g. Adonkia Traders Osusu">
+    <div class="row">
+      <div><label>Contribution per member (NLe)</label><input name="amount" type="number" min="1" required placeholder="500"></div>
+      <div><label>How often</label><select name="freq"><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></div>
+    </div>
+    <label>First due date</label>
+    <input name="start" type="date" value="${today}" required>
+    <div class="row">
+      <div><label>Pay contributions to (number and name)</label><input name="payTo" placeholder="076 123456 (Aminata Kamara)"></div>
+      <div><label>Network</label><select name="network"><option>Orange Money</option><option>Afrimoney</option><option>Any mobile money</option></select></div>
+    </div>
+    <label>Grace period (days after the due date before a payment is marked Late)</label>
+    <input name="grace" type="number" min="0" value="2">
+    <label>Members (one per line: name, phone)</label>
+    <textarea name="members" required placeholder="Aminata Kamara, 23276123456&#10;Mohamed Sesay, 23277234567&#10;Fatmata Bangura"></textarea>
+    <p class="hint">Line order is the payout order. Phone is optional; include the country code (232...) to send WhatsApp reminders.</p>
+    <label class="switch"><input type="checkbox" name="shuffle"> Shuffle payout order randomly</label>
+    <div style="margin-top:14px"><button type="submit">Create group</button></div>
+  </form>`;
+}
+
+function viewGroup() {
+  const g = grp(); if (!g) return viewHome();
+  const n = g.members.length;
+  const c = state.cycle ?? currentCycle(g);
+  const recip = g.members[c];
+  const na = activeMembers(g, c).length;
+  const done = confirmedCount(g, c);
+  const pct = Math.round(done / na * 100);
+  const po = (g.payouts || {})[c];
+  const lateN = activeMembers(g, c).filter(m => lateDays(g, c, m) > 0).length;
+
+  const head = `
+  ${RO ? `<div class="card payto"><b>View only.</b> This is a snapshot from ${fmtDate(g.snapAt)}. Ask your organizer for a new link to see later updates. Mobile money references are partly hidden.</div>` : `<div class="top">
+    <button class="ghost small" data-act="home">&larr; Groups</button>
+    <label class="switch" style="margin:0"><input type="checkbox" data-act="admin" ${state.admin ? 'checked' : ''}> Admin mode</label>
+  </div>`}
+  <h2>${esc(g.name)}</h2>
+  <div class="card">
+    <div class="round">
+      <button class="ghost small" data-act="prev" ${c === 0 ? 'disabled' : ''}>&lsaquo;</button>
+      <div class="mid"><div class="hint">Round ${c + 1} of ${n} &middot; due ${fmtDate(dueDate(g, c))}</div>
+        <div class="big">${esc(recip.name)} receives ${money(g.amount * na)}</div></div>
+      <button class="ghost small" data-act="next" ${c === n - 1 ? 'disabled' : ''}>&rsaquo;</button>
+    </div>
+    <div class="bar"><div style="width:${pct}%"></div></div>
+    <div class="hint">${done} of ${na} contributions confirmed (${money(done * g.amount)})${lateN ? ' &middot; <b style="color:var(--red)">' + lateN + ' late</b>' : ''}</div>
+    ${po ? `<div class="hint" style="margin-top:8px"><span class="chip ok">Paid out</span> ${money(po.amount)} to ${esc(recip.name)} on ${fmtDate(po.ts)} (ref ${esc(po.ref)})</div>` : ''}
+    ${state.admin ? `<div style="margin-top:10px">${po ? '<button class="ghost small" data-act="notifypayout">Notify recipient</button>' : '<button class="small" data-act="payout">Record payout</button>'}</div>` : ''}
+  </div>
+  ${g.payTo
+    ? `<div class="card payto"><div class="hint">Send your contribution to</div><div class="big" style="font-weight:800">${esc(g.payTo)}</div><div class="hint">${esc(g.network || '')}</div></div>`
+    : (state.admin ? `<div class="card payto"><div class="hint">No pay-to details yet. Tap "Edit pay-to details" below.</div></div>` : '')}
+  <div class="tabs">
+    ${['pay', 'schedule', 'ledger'].map(t => `<button class="${state.tab === t ? 'on' : ''}" data-act="tab" data-tab="${t}">${{ pay: 'Contributions', schedule: 'Schedule', ledger: 'Ledger' }[t]}</button>`).join('')}
+  </div>`;
+
+  let body = '';
+  if (state.tab === 'pay') {
+    body = `<div class="card">` + activeMembers(g, c).map(m => {
+      const p = pay(g, c, m.id);
+      let chip, acts = '';
+      if (!p) {
+        const ld = lateDays(g, c, m);
+        chip = ld > 0 ? `<span class="chip late">Late ${ld} day${ld > 1 ? 's' : ''}</span>` : '<span class="chip unpaid">Unpaid</span>';
+        acts = RO ? '' : `<input id="ref-${m.id}" placeholder="Mobile money ref">
+                <button class="small" data-act="paid" data-m="${m.id}">Mark paid</button>`;
+        if (state.admin) acts += `<button class="ghost small" data-act="remind" data-m="${m.id}">Remind</button>`;
+      } else if (p.status === 'pending') {
+        chip = '<span class="chip pending">Awaiting confirmation</span>';
+        acts = `<span class="hint">Ref: ${esc(p.ref)}</span>`;
+        if (state.admin) acts += `<button class="small" data-act="confirm" data-m="${m.id}">Confirm</button>
+                                  <button class="danger small" data-act="reject" data-m="${m.id}">Reject</button>`;
+      } else {
+        chip = '<span class="chip ok">Confirmed</span>';
+        acts = `<span class="hint">Ref: ${esc(p.ref)}</span>`;
+        if (state.admin) acts += `<button class="ghost small" data-act="receipt" data-m="${m.id}">Send receipt</button>`;
+      }
+      const adm = state.admin ? `<div class="admline"><button class="ghost small" data-act="welcome" data-m="${m.id}">Send welcome</button><button class="ghost small" data-act="editmember" data-m="${m.id}">Edit name</button></div>` : '';
+      return `<div class="member"><div><span class="who">${esc(m.name)}</span> ${chip}</div><div class="acts">${acts}</div>${adm}</div>`;
+    }).join('') + `</div>`;
+    if (state.admin) body += `<div class="row" style="margin-bottom:8px"><button class="ghost" data-act="welcomeall">Copy group welcome</button><button class="ghost" data-act="remindall">Copy group reminder</button><button class="ghost" data-act="editpay">Edit pay-to and grace</button><button class="ghost" data-act="addmember">Add member</button><button class="ghost" data-act="backup">Back up now</button></div>
+      <button data-act="sharelink" style="width:100%;margin-bottom:8px">Share view-only link with members</button>
+      <p class="hint">Admin mode is a convenience switch in this version. Real sign-in comes with a backend.</p>`;
+  }
+
+  if (state.tab === 'schedule') {
+    const now = currentCycle(g);
+    body = `<div class="card"><table><tr><th>Round</th><th>Date</th><th>Receives</th><th>Paid</th>${state.admin ? '<th></th>' : ''}</tr>` +
+      g.members.map((m, i) => `<tr class="${i === now ? 'now' : ''}"><td>${i + 1}</td><td>${fmtDate(dueDate(g, i))}</td><td>${esc(m.name)}</td><td>${confirmedCount(g, i)}/${activeMembers(g, i).length}${(g.payouts || {})[i] ? '<br><small>Paid out</small>' : ''}</td>${state.admin ? `<td><button class="ghost small" data-act="editmember" data-m="${m.id}">Edit</button></td>` : ''}</tr>`).join('') +
+      `</table></div>`;
+  }
+
+  if (state.tab === 'ledger') {
+    body = `<div class="card">` + (g.events.length
+      ? g.events.slice().reverse().map(e => `<div class="ev">${esc(e.text)}<br><small>${fmtTime(e.ts)}</small></div>`).join('')
+      : `<div class="empty">No activity yet. Payments will appear here.</div>`) + `</div>`;
+  }
+
+  const foot = state.admin ? `<button class="danger small" data-act="delete">Delete this group</button>` : '';
+  return head + body + foot;
+}
+
+function render() { $app.innerHTML = state.sel ? viewGroup() : viewHome(); save(); }
+
+/* ---------- actions ---------- */
+function log(g, text) { g.events.push({ ts: Date.now(), text }); }
+const memberById = (g, id) => g.members.find(m => m.id === id);
+const cycleNow = g => state.cycle ?? currentCycle(g);
+function remindText(g, name, c) {
+  return `Hello ${name}, reminder: your osusu contribution of ${money(g.amount)} for "${g.name}" (round ${c + 1}) is due ${fmtDate(dueDate(g, c))}.${payLine(g)} Please pay and send your mobile money reference.`;
+}
+const payLine = g => g.payTo ? ` Pay to: ${g.payTo}${g.network ? ' (' + g.network + ')' : ''}.` : '';
+function welcomeText(g, m) {
+  const n = g.members.length, i = g.members.indexOf(m);
+  return `Welcome to "${g.name}", ${m.name}! This is our osusu savings group. Every member contributes ${money(g.amount)} ${g.freq}, and each round one member receives the full pot of ${money(g.amount * n)}. Your payout is in round ${i + 1}, on ${fmtDate(dueDate(g, i))}. The first contribution is due ${fmtDate(dueDate(g, 0))}.${payLine(g)} After paying, send your mobile money reference so it can be confirmed. Payments more than ${graceOf(g)} days after the due date are marked late. Thank you for joining.`;
+}
+function welcomeAllText(g) {
+  const n = g.members.length;
+  return `Welcome to "${g.name}"! Every member contributes ${money(g.amount)} ${g.freq}. Each round one member receives the full pot of ${money(g.amount * n)}.${payLine(g)}\n\nPayout order:\n` +
+    g.members.map((m, i) => `${i + 1}. ${m.name} - ${fmtDate(dueDate(g, i))}`).join('\n') +
+    `\n\nAfter paying, send your mobile money reference so it can be confirmed. Payments more than ${graceOf(g)} days after the due date are marked late. Thank you!`;
+}
+function receiptText(g, m, c, ref) {
+  return `Hello ${m.name}, we have confirmed your contribution of ${money(g.amount)} (ref ${ref}) for round ${c + 1} of "${g.name}". Thank you!`;
+}
+function snapshot(g) {
+  const mask = r => r ? '\u2022\u2022\u2022\u2022' + String(r).slice(-4) : '';
+  const c = JSON.parse(JSON.stringify(g));
+  c.members.forEach(m => { delete m.phone; });
+  Object.values(c.payments).forEach(p => { p.ref = mask(p.ref); });
+  Object.values(c.payouts || {}).forEach(p => { p.ref = mask(p.ref); });
+  c.events = c.events.map(e => ({ ts: e.ts, text: e.text.replace(/\s*\(ref [^)]*\)/g, '') }));
+  c.snapAt = Date.now();
+  return c;
+}
+async function encode(obj) {
+  let data = new TextEncoder().encode(JSON.stringify(obj)), tag = 'b';
+  if ('CompressionStream' in window) {
+    const cs = new Blob([data]).stream().pipeThrough(new CompressionStream('gzip'));
+    data = new Uint8Array(await new Response(cs).arrayBuffer()); tag = 'z';
+  }
+  let bin = ''; data.forEach(b => { bin += String.fromCharCode(b); });
+  return tag + btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+async function decode(str) {
+  const tag = str[0]; let b = str.slice(1).replace(/-/g, '+').replace(/_/g, '/');
+  while (b.length % 4) b += '=';
+  let data = Uint8Array.from(atob(b), ch => ch.charCodeAt(0));
+  if (tag === 'z') {
+    const ds = new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip'));
+    data = new Uint8Array(await new Response(ds).arrayBuffer());
+  }
+  return JSON.parse(new TextDecoder().decode(data));
+}
+async function backup() {
+  const data = JSON.stringify({ app: 'osusu', version: 1, savedAt: Date.now(), groups: state.groups }, null, 1);
+  const name = 'osusu-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+  const file = new File([data], name, { type: 'application/json' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Osusu backup' });
+      state.lastBackup = Date.now(); render(); return;
+    }
+  } catch (err) { if (err && err.name === 'AbortError') return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+  state.lastBackup = Date.now(); render();
+}
+function restoreFrom(text) {
+  let d;
+  try { d = JSON.parse(text); } catch (err) { alert('This file could not be read. Choose an Osusu backup file (.json).'); return; }
+  const ok = d && d.app === 'osusu' && Array.isArray(d.groups) &&
+    d.groups.every(g => g && g.id && g.name && Array.isArray(g.members) && g.payments && Array.isArray(g.events));
+  if (!ok) { alert('This is not a valid Osusu backup file.'); return; }
+  if (!confirm(`Restore ${d.groups.length} group(s) from this backup? A group already here with the same ID will be replaced by the backup version.`)) return;
+  d.groups.forEach(g => {
+    const i = state.groups.findIndex(x => x.id === g.id);
+    if (i >= 0) state.groups[i] = g; else state.groups.push(g);
+  });
+  state.sel = null; state.creating = false;
+  render();
+  alert('Backup restored.');
+}
+function send(m, text) {
+  const digits = (m.phone || '').replace(/\D/g, '');
+  if (digits) window.open('https://wa.me/' + digits + '?text=' + encodeURIComponent(text), '_blank');
+  else copy(text, 'No phone saved. Message copied to clipboard.');
+}
+function copy(text, msg) {
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => alert(msg)).catch(() => prompt('Copy this message:', text));
+}
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el || el.type === 'checkbox') return;
+  const act = el.dataset.act, g = grp();
+  if (RO && !['tab', 'prev', 'next'].includes(act)) return;
+  if (act === 'sharelink') {
+    encode(snapshot(g)).then(code => {
+      const link = location.origin + location.pathname + '#view=' + code;
+      copy(`Here is the record for "${g.name}" (view only, updated ${fmtDate(Date.now())}):\n${link}`, 'View-only link copied. Paste it in your WhatsApp group.');
+    });
+    return;
+  }
+  if (act === 'backup') { backup(); return; }
+  if (act === 'restore') { document.getElementById('restoreFile').click(); return; }
+  if (act === 'new') { state.creating = true; }
+  else if (act === 'cancel') { state.creating = false; }
+  else if (act === 'open') { state.sel = el.dataset.id; state.cycle = null; state.tab = 'pay'; }
+  else if (act === 'home') { state.sel = null; state.cycle = null; }
+  else if (act === 'tab') { state.tab = el.dataset.tab; }
+  else if (act === 'prev') { state.cycle = cycleNow(g) - 1; }
+  else if (act === 'next') { state.cycle = cycleNow(g) + 1; }
+  else if (act === 'paid') {
+    const c = cycleNow(g), m = memberById(g, el.dataset.m);
+    const ref = document.getElementById('ref-' + m.id).value.trim();
+    if (!ref) { alert('Enter the mobile money reference first.'); return; }
+    g.payments[c + ':' + m.id] = { ref, status: 'pending', ts: Date.now() };
+    log(g, `${m.name} marked ${money(g.amount)} paid for round ${c + 1} (ref ${ref}).`);
+  }
+  else if (act === 'confirm') {
+    const c = cycleNow(g), m = memberById(g, el.dataset.m);
+    g.payments[c + ':' + m.id].status = 'confirmed';
+    log(g, `Admin confirmed ${m.name}'s payment for round ${c + 1}.`);
+  }
+  else if (act === 'reject') {
+    const c = cycleNow(g), m = memberById(g, el.dataset.m);
+    delete g.payments[c + ':' + m.id];
+    log(g, `Admin rejected ${m.name}'s payment for round ${c + 1}. Needs a new reference.`);
+  }
+  else if (act === 'remind') {
+    const c = cycleNow(g), m = memberById(g, el.dataset.m), text = remindText(g, m.name, c);
+    const digits = (m.phone || '').replace(/\D/g, '');
+    if (digits) window.open('https://wa.me/' + digits + '?text=' + encodeURIComponent(text), '_blank');
+    else copy(text, 'No phone saved. Reminder copied to clipboard.');
+    log(g, `Reminder sent to ${m.name} for round ${c + 1}.`);
+  }
+  else if (act === 'remindall') {
+    const c = cycleNow(g);
+    const names = activeMembers(g, c).filter(m => !pay(g, c, m.id)).map(m => m.name);
+    if (!names.length) { alert('Everyone has paid for this round.'); return; }
+    copy(`Osusu "${g.name}", round ${c + 1}: contributions of ${money(g.amount)} are due ${fmtDate(dueDate(g, c))}. Still waiting on: ${names.join(', ')}.`, 'Group reminder copied. Paste it in your WhatsApp group.');
+  }
+  else if (act === 'welcome') {
+    const m = memberById(g, el.dataset.m);
+    send(m, welcomeText(g, m));
+    log(g, `Welcome message sent to ${m.name}.`);
+  }
+  else if (act === 'welcomeall') { copy(welcomeAllText(g), 'Group welcome copied. Paste it in your WhatsApp group.'); }
+  else if (act === 'receipt') {
+    const c = cycleNow(g), m = memberById(g, el.dataset.m), p = pay(g, c, m.id);
+    send(m, receiptText(g, m, c, p.ref));
+    log(g, `Receipt sent to ${m.name} for round ${c + 1}.`);
+  }
+  else if (act === 'payout') {
+    const c = cycleNow(g), r = g.members[c], total = activeMembers(g, c).length, done = confirmedCount(g, c), amount = done * g.amount;
+    if (!done) { alert('No confirmed contributions for this round yet.'); return; }
+    if (done < total && !confirm(`Only ${done} of ${total} contributions are confirmed. Record a payout of ${money(amount)} to ${r.name} anyway?`)) return;
+    const ref = (prompt(`Mobile money reference for the ${money(amount)} sent to ${r.name}:`) || '').trim();
+    if (!ref) return;
+    g.payouts = g.payouts || {};
+    g.payouts[c] = { ref, amount, ts: Date.now() };
+    log(g, `Payout of ${money(amount)} sent to ${r.name} for round ${c + 1} (ref ${ref}).`);
+  }
+  else if (act === 'notifypayout') {
+    const c = cycleNow(g), r = g.members[c], po = g.payouts[c];
+    send(r, `Hello ${r.name}, your osusu payout of ${money(po.amount)} for round ${c + 1} of "${g.name}" has been sent (ref ${po.ref}). Please confirm when you receive it.`);
+    log(g, `Payout notice sent to ${r.name}.`);
+  }
+  else if (act === 'editmember') {
+    const m = memberById(g, el.dataset.m), old = m.name;
+    const name = prompt('Member name:', m.name);
+    if (name === null) return;
+    if (name.trim()) m.name = name.trim();
+    const phone = prompt('Phone with country code (leave empty for none):', m.phone || '');
+    if (phone !== null) m.phone = phone.trim();
+    log(g, old !== m.name ? `Admin changed a member's name from ${old} to ${m.name}.` : `Admin updated details for ${m.name}.`);
+  }
+  else if (act === 'addmember') {
+    const n = g.members.length;
+    const name = (prompt('New member name:') || '').trim();
+    if (!name) return;
+    const phone = (prompt('Phone with country code (optional), e.g. 23276123456:') || '').trim();
+    const def = Math.min(currentCycle(g) + 2, n + 1);
+    let r = parseInt(prompt('Start contributing from which round? (1 to ' + (n + 1) + ')\nThey receive their payout in round ' + (n + 1) + '.', def), 10);
+    if (isNaN(r)) return;
+    r = Math.max(1, Math.min(r, n + 1));
+    g.members.push({ id: uid(), name, phone, joined: r - 1 });
+    log(g, `Admin added ${name}. Contributes from round ${r}, receives in round ${n + 1}.`);
+  }
+  else if (act === 'editpay') {
+    const v = prompt('Mobile money number and name members should pay to:', g.payTo || '');
+    if (v === null) return;
+    g.payTo = v.trim();
+    const net = prompt('Network (Orange Money, Afrimoney, or Any mobile money):', g.network || 'Orange Money');
+    if (net !== null) g.network = net.trim();
+    const gr = prompt('Grace period in days before a payment is marked Late:', graceOf(g));
+    if (gr !== null && gr.trim() !== '' && !isNaN(parseInt(gr, 10))) g.grace = Math.max(0, parseInt(gr, 10));
+    log(g, 'Admin updated the pay-to and grace period settings.');
+  }
+  else if (act === 'delete') {
+    if (!confirm('Delete this group and its records? This cannot be undone.')) return;
+    state.groups = state.groups.filter(x => x.id !== g.id); state.sel = null;
+  }
+  render();
+});
+
+document.getElementById('restoreFile').addEventListener('change', e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f || RO) return;
+  const r = new FileReader();
+  r.onload = () => restoreFrom(String(r.result));
+  r.readAsText(f);
+});
+
+document.addEventListener('change', e => {
+  if (!RO && e.target.dataset.act === 'admin') { state.admin = e.target.checked; render(); }
+});
+
+document.addEventListener('submit', e => {
+  if (e.target.id !== 'createForm') return;
+  e.preventDefault();
+  const f = new FormData(e.target);
+  let members = String(f.get('members')).split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const [name, phone] = l.split(',').map(s => s.trim());
+    return { id: uid(), name, phone: phone || '' };
+  });
+  if (members.length < 2) { alert('Add at least 2 members, one per line.'); return; }
+  if (f.get('shuffle')) members.sort(() => Math.random() - 0.5);
+  const g = { id: uid(), name: f.get('name').trim(), amount: Number(f.get('amount')), freq: f.get('freq'),
+    start: f.get('start'), grace: Math.max(0, parseInt(f.get('grace'), 10) || 0), payTo: String(f.get('payTo')).trim(), network: f.get('network'), members, payments: {}, events: [] };
+  log(g, `Group created with ${members.length} members.`);
+  state.groups.push(g); state.creating = false; state.sel = g.id; state.cycle = null; state.tab = 'pay';
+  render();
+});
+
+if (location.hash.startsWith('#view=')) {
+  decode(location.hash.slice(6)).then(g => {
+    RO = true;
+    state = { groups: [g], sel: g.id, tab: 'pay', admin: false, cycle: null, creating: false };
+    render();
+  }).catch(() => {
+    RO = true;
+    $app.innerHTML = '<div class="card empty">This link is incomplete or damaged. Ask your organizer for a new one.</div>';
+  });
+} else render();
+</script>
+</body>
+</html>
